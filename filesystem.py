@@ -2,7 +2,7 @@ import os
 
 def find_files_in_args(execution):
 
-    used_files = []
+    used_files = set()
 
     # Loop over the arguments and check for existing files
     for arg in execution.get_args():
@@ -15,7 +15,7 @@ def find_files_in_args(execution):
             # Check that the used file wasn't created by this executable
             if used_file.executable != execution.executable:
 
-                used_files.append(used_file)
+                used_files.add(used_file)
 
     return used_files
             
@@ -52,5 +52,21 @@ def find_exe_in_path(command):
             print 'Multiple versions of %s found, using %s. If you wish to use a different version, please specify it explicitly' % (command,executable_path)
     return executable_path
 
+def get_state():
+    files = set()
+    for path in os.listdir(os.getcwd()):
+        details = os.stat(path)
+        files.add((path,details.st_atime,details.st_mtime,details.st_ctime))
+    return files
 
-from bilbo_core.models import File
+def get_changed_files(old_state):
+    new_state = get_state()
+    changed = new_state.difference(old_state)
+    changed_files = set()
+    for path,atime,mtime,ctime in changed:
+        abs_path = os.path.abspath(path)
+        file_object = File.get_from_unique_name(Host.get_current_host(),abs_path)
+        changed_files.add(file_object)
+    return changed_files
+
+from bilbo_core.models import File,Host

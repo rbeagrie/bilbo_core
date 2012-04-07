@@ -198,10 +198,9 @@ class Execution(models.Model):
         # See if the command has any existing files in its arguments
         using_files = filesystem.find_files_in_args(self)
 
-        if using_files:
+        print 'using files:',using_files
 
-            print 'used',using_files
-            #sys.exit(1)
+        fs_state = filesystem.get_state()
         
         stdout = subprocess.PIPE
 
@@ -228,18 +227,44 @@ class Execution(models.Model):
 
         self.error = sp.stderr.read()
 
+        changed_files = filesystem.get_changed_files(fs_state)
+
+        output_files = changed_files
+
+        input_files = using_files.difference(changed_files)
+
+        print 'output files:\n\n',changed_files
+
+        print 'input files:\n\n',input_files
+
+        
+
         self.save()
 
         # If we had any input files, add these to the execution
-        # (We have to do this here because the execution must be saved first)
-        for used_file in using_files:
+        # (we have to do this here because the execution must be saved
+        # before we can add files to it)
+        for used_file in input_files:
             self.with_file(used_file)
+
+        # If we had any output files, add these to the execution
+        for output_file in output_files:
+            self.produced_file(output_file)
 
     def with_file(self,used_file):
 
         FileRelationship.objects.create(execution=self,
                                         file_record=used_file,
                                         relationship='input')
+
+    def produced_file(self,used_file):
+
+        FileRelationship.objects.create(execution=self,
+                                        file_record=used_file,
+                                        relationship='output')
+
+        used_file.executable = self.executable
+        used_file.save()
 
     @staticmethod
     def get_execution(executable,host,argv):
