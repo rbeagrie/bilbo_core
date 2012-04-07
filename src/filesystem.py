@@ -1,23 +1,4 @@
-import os
-
-def find_files_in_args(execution):
-
-    used_files = set()
-
-    # Loop over the arguments and check for existing files
-    for arg in execution.get_args():
-        if os.path.exists(arg):
-            
-            abs_path = os.path.abspath(arg)
-            # If the path exits, get the corresponding File object from the database
-            used_file = File.get_from_unique_name(execution.host,abs_path)
-            
-            # Check that the used file wasn't created by this executable
-            if used_file.executable != execution.executable:
-
-                used_files.add(used_file)
-
-    return used_files
+import os,random,string
             
 def find_in_path(command):
     '''
@@ -52,15 +33,15 @@ def find_exe_in_path(command):
             print 'Multiple versions of %s found, using %s. If you wish to use a different version, please specify it explicitly' % (command,executable_path)
     return executable_path
 
-def get_state():
+def get_state(directory):
     files = set()
-    for path in os.listdir(os.getcwd()):
+    for path in os.listdir(directory):
         details = os.stat(path)
         files.add((path,details.st_atime,details.st_mtime,details.st_ctime))
     return files
 
-def get_changed_files(old_state):
-    new_state = get_state()
+def get_changed_files(directory,old_state):
+    new_state = get_state(directory)
     changed = new_state.difference(old_state)
     changed_files = set()
     for path,atime,mtime,ctime in changed:
@@ -68,5 +49,35 @@ def get_changed_files(old_state):
         file_object = File.get_from_unique_name(Host.get_current_host(),abs_path)
         changed_files.add(file_object)
     return changed_files
+
+def move_new_files(directory):
+    new_files = set()
+    for path in os.listdir(directory):
+        old_path = os.path.abspath(os.path.join(directory,path))
+        new_path = os.path.abspath(os.path.join(os.getcwd(),path))
+        print old_path,new_path
+        os.renames(old_path,new_path)
+        file_object = File.get_from_unique_name(Host.get_current_host(),new_path)
+    return new_files
+
+def unique_filename_in(path=None):
+    """Return a random filename unique in the given path.
+
+    The filename returned is twenty alphanumeric characters which are
+    not already serving as a filename in *path*. If *path* is
+    omitted, it defaults to the current working directory.
+    """
+    if path == None:
+        path = os.getcwd()
+        
+    def random_string():
+        return "".join([random.choice(string.letters + string.digits)
+                        for x in range(20)])
+    while True:
+        filename = random_string()
+        files = [f for f in os.listdir(path) if f.startswith(filename)]
+        if files == []:
+            break
+    return filename
 
 from bilbo_core.models import File,Host

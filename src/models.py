@@ -132,12 +132,12 @@ class File(models.Model):
         return 'File %s on %s' % (self.path,self.host.name)
 
     @staticmethod
-    def get_from_unique_name(host,path):
-        ''' Get or create a file object from the host and path '''
+    def get_from_current_host(path):
+        ''' Get or create a file object from the current host and path '''
         
         # Use django's get_or_create to create the executable if it does not exist
         file_object, created = File.objects.get_or_create(path=path,
-                                                          host=host,
+                                                          host=Host.get_current_host(),
                   defaults={'name': os.path.basename(path),
                             'creation_date':timezone.now(),
                             'executable':Executable.unknown()})
@@ -192,56 +192,109 @@ class Execution(models.Model):
 
     def get_args(self):
         return self.get_command()[1:]
+
+    def set_command(self,args):
+        self.full_command = ' '.join(args)
+
+    def find_files_in_args(self):
+
+        used_files = set()
+        cleaned_args = []
+        
+        # Loop over the arguments and check for existing files
+        for arg in self.get_command():
+            if os.path.exists(arg):
+                
+                abs_path = os.path.abspath(arg)
+                # If the path exits, get the corresponding File object from the database
+                used_file = File.get_from_current_host(abs_path)
+                
+                # Check that the used file wasn't created by this executable
+                if used_file.executable != self.executable:
+
+                    used_files.add(used_file)
+                    cleaned_args.append(abs_path)
+                else:
+                    cleaned_args.append(arg)
+            else:
+                cleaned_args.append(arg)
+
+        self.set_command(cleaned_args)
+
+        return used_files
     
     def run(self):
 
         # See if the command has any existing files in its arguments
-        using_files = filesystem.find_files_in_args(self)
+        # Prepare a new command with absolute paths to existing files
+        existing_files = self.find_files_in_args()
 
-        fs_state = filesystem.get_state()
-        
+        # Get a set of files and modification times for the current working directory
+        cwd_state = filesystem.get_state(os.getcwd())
+
+        # Generate a new, unique working directory for the sub-process
+        working_directory = filesystem.unique_filename_in(os.getcwd())
+        print working_directory
+        os.mkdir(os.path.join(os.getcwd(), working_directory))
+
+        # Prepare to get the output of our command
         stdout = subprocess.PIPE
-
         stderr = subprocess.PIPE
 
-        command = self.get_command()
-
+        # Start counting the CPU time
         start_time = time.clock()
 
+        # Run our command
         print 'Running %s with arguments %s' % (self.executable.name,
                                                 ' '.join(self.get_args()))
         
         try:
-            sp = subprocess.Popen(command, bufsize=-1, stdout=stdout,
-                                  stderr=stderr)
+            sp = subprocess.Popen(self.get_command(),
+                                  bufsize=-1,
+                                  stdout=stdout,
+                                  stderr=stderr,
+                                  cwd = working_directory)
         except OSError, ose:
             raise ValueError("Program %s does not seem to exist in your $PATH." % command[0])
 
+        # Get the return code
         self.return_code = sp.wait()
 
+        # Calculate elapsed cpu time
         self.runtime = time.clock() - start_time
 
+        # Read the process' stdout and stderr
         self.output = sp.stdout.read()
-
         self.error = sp.stderr.read()
 
-        changed_files = filesystem.get_changed_files(fs_state)
+        # Check for new files in the working directory and move them to the current directory
+        new_files = filesystem.move_new_files(working_directory)
 
-        output_files = changed_files
+        # Remove the working directory
+        os.rmdir(working_directory)
 
-        input_files = using_files.difference(changed_files)
+        # See if any files in our current directory have changed
+        # (these must be output files)
+        changed_files = filesystem.get_changed_files(os.getcwd(),cwd_state)
+        output_files = changed_files.union(new_files)
 
+        # Any files listed in the command arguments but not changed
+        # by the process must be input files
+        input_files = existing_files.difference(changed_files)
+
+        # Save the execution
         self.save()
 
         # If we had any input files, add these to the execution
-        # (we have to do this here because the execution must be saved
-        # before we can add files to it)
         for used_file in input_files:
             self.with_file(used_file)
 
         # If we had any output files, add these to the execution
         for output_file in output_files:
             self.produced_file(output_file)
+
+        # Save the execution again
+        self.save()
 
     def with_file(self,used_file):
 
