@@ -2,7 +2,7 @@ from django.db import models
 from bilbo_core.exceptions import ExecutableError
 import os, sys,time,subprocess,shlex,platform
 from django.utils import timezone
-from bilbo_core import settings
+from bilbo_core import settings,versioncontrol
 debug = settings.getboolean('bilbo','debug')
 
 class Host(models.Model):
@@ -43,11 +43,11 @@ class Executable(models.Model):
 
     # Define options for the version_controlled field
 
-    VERSION_CONTROLLED_CHOICES = (
+    VERSION_CONTROL_CHOICES = (
     ('git', 'git'),
     ('mercurial', 'mercurial'),
     ('subversion', 'subversion'),
-    ('false', 'false')
+    ('none', 'none')
     )
 
     # Define the database fields
@@ -56,9 +56,22 @@ class Executable(models.Model):
     registered = models.DateTimeField('date registered')
     host = models.ForeignKey(Host)
     path = models.CharField(max_length=200)
-    version_controlled = models.CharField(max_length=50,
-                                          choices=VERSION_CONTROLLED_CHOICES)
+    version_control = models.CharField(max_length=50,
+                                          choices=VERSION_CONTROL_CHOICES)
     version_command = models.CharField(max_length=50)
+
+    def get_version_control(self):
+        # Check if the executable is under version control
+        try:
+            working_copy = versioncontrol.get_working_copy(os.path.dirname(self.path))
+        except versioncontrol.VersionControlError:
+            working_copy = False
+
+        # This is a hack
+        if working_copy:
+            return 'git'
+        else:
+            return 'none'
 
     @staticmethod
     def get_from_command(command,host=False):
@@ -107,6 +120,14 @@ class Executable(models.Model):
                             'host':host})
 
         return executable
+
+    def save(self,*args,**kwargs):
+
+        # This is a hack
+        if self.version_control == '':
+            self.version_control = self.get_version_control()
+
+        super(Executable, self).save(*args, **kwargs)
 
     @staticmethod
     def unknown():
@@ -224,7 +245,6 @@ class Execution(models.Model):
         # See if the command has any existing files in its arguments
         # Prepare a new command with absolute paths to existing files
         existing_files,new_command = self.find_files_in_args()
-        print 'existing',existing_files
 
         # Get a set of files and modification times for the current working directory
         cwd_state = filesystem.get_state(os.getcwd())
@@ -242,7 +262,7 @@ class Execution(models.Model):
 
         # Run our command
         print 'Running %s with arguments %s' % (self.executable.name,
-                                                ' '.join(new_command))
+                                                ' '.join(new_command[1:]))
         
         try:
             sp = subprocess.Popen(new_command,
@@ -250,8 +270,8 @@ class Execution(models.Model):
                                   stdout=stdout,
                                   stderr=stderr,
                                   cwd = working_directory)
-        except OSError, ose:
-            raise ValueError("Program %s does not seem to exist in your $PATH." % command[0])
+        except ValueError, ose:
+            raise ValueError("Program %s does not seem to exist in your $PATH." % new_command[0])
 
         # Get the return code
         self.return_code = sp.wait()
@@ -268,7 +288,6 @@ class Execution(models.Model):
 
         # Check for new files in the working directory and move them to the current directory
         new_files = filesystem.move_new_files(working_directory)
-        print 'new',new_files
 
         # Remove the working directory
         #os.rmdir(working_directory)
@@ -276,16 +295,12 @@ class Execution(models.Model):
         # See if any files in our current directory have changed
         # (these must be output files)
         changed_files = filesystem.get_changed_files(os.getcwd(),cwd_state)
-        print 'changed',changed_files
         old_output_files = existing_files.intersection(changed_files)
-        print 'output_old',old_output_files
         output_files = old_output_files.union(new_files)
-        print 'output_all',output_files
 
         # Any files listed in the command arguments but not changed
         # by the process must be input files
         input_files = existing_files.difference(changed_files)
-        print 'input',input_files
 
         # Save the execution
         self.save()

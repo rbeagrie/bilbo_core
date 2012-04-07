@@ -9,8 +9,10 @@ def run(argv):
     '''Run the command passed to bilbo and record the command, plus its inputs/outputs'''
 
     # Split argv into an executable and some remaining arguments
+    # This is an ugly, ugly hack
     executable_command = argv[0]
-    arguments = argv[1:]
+    if executable_command in [ 'python','python.exe' ]:
+        executable_command = argv[1]
 
     # Get the appropriate host object
     host = Host.get_current_host()
