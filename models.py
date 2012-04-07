@@ -2,6 +2,7 @@ from django.db import models
 from bilbo_core.exceptions import ExecutableError
 import os, sys,time,subprocess,shlex,platform
 from django.utils import timezone
+from bilbo_core import settings
 
 class Host(models.Model):
     '''
