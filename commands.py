@@ -1,9 +1,9 @@
 from textwrap import dedent
-from bilbo_core.models import Executable, Host, Execution
 from django.core import management
 import bilbo_core
 import sys
 from django.utils import timezone
+from bilbo_core.models import Executable,Host,Execution
 
 def run(argv):
     '''Run the command passed to bilbo and record the command, plus its inputs/outputs'''
@@ -12,8 +12,6 @@ def run(argv):
     executable_command = argv[0]
     arguments = argv[1:]
 
-    print "Running %s with options '%s'" % (executable_command,' '.join(arguments))
-
     # Get the appropriate host object
     host = Host.get_current_host()
 
@@ -21,12 +19,10 @@ def run(argv):
     executable = Executable.get_from_command(executable_command)
 
     # Create an execution object
-    execution = Execution.get_execution(executable,host)
+    execution = Execution.get_execution(executable,host,argv)
 
     # Run the execution
     execution.run()
-
-    execution.save()
 
     print execution
 
