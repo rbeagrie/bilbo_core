@@ -193,9 +193,6 @@ class Execution(models.Model):
     def get_args(self):
         return self.get_command()[1:]
 
-    def set_command(self,args):
-        self.full_command = ' '.join(args)
-
     def find_files_in_args(self):
 
         used_files = set()
@@ -219,22 +216,19 @@ class Execution(models.Model):
             else:
                 cleaned_args.append(arg)
 
-        self.set_command(cleaned_args)
-
-        return used_files
+        return used_files,cleaned_args
     
     def run(self):
 
         # See if the command has any existing files in its arguments
         # Prepare a new command with absolute paths to existing files
-        existing_files = self.find_files_in_args()
+        existing_files,new_command = self.find_files_in_args()
 
         # Get a set of files and modification times for the current working directory
         cwd_state = filesystem.get_state(os.getcwd())
 
         # Generate a new, unique working directory for the sub-process
         working_directory = filesystem.unique_filename_in(os.getcwd())
-        print working_directory
         os.mkdir(os.path.join(os.getcwd(), working_directory))
 
         # Prepare to get the output of our command
@@ -246,10 +240,10 @@ class Execution(models.Model):
 
         # Run our command
         print 'Running %s with arguments %s' % (self.executable.name,
-                                                ' '.join(self.get_args()))
+                                                ' '.join(new_command))
         
         try:
-            sp = subprocess.Popen(self.get_command(),
+            sp = subprocess.Popen(new_command,
                                   bufsize=-1,
                                   stdout=stdout,
                                   stderr=stderr,
@@ -271,7 +265,7 @@ class Execution(models.Model):
         new_files = filesystem.move_new_files(working_directory)
 
         # Remove the working directory
-        os.rmdir(working_directory)
+        #os.rmdir(working_directory)
 
         # See if any files in our current directory have changed
         # (these must be output files)

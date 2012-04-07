@@ -46,7 +46,7 @@ def get_changed_files(directory,old_state):
     changed_files = set()
     for path,atime,mtime,ctime in changed:
         abs_path = os.path.abspath(path)
-        file_object = File.get_from_unique_name(Host.get_current_host(),abs_path)
+        file_object = File.get_from_current_host(abs_path)
         changed_files.add(file_object)
     return changed_files
 
@@ -55,9 +55,12 @@ def move_new_files(directory):
     for path in os.listdir(directory):
         old_path = os.path.abspath(os.path.join(directory,path))
         new_path = os.path.abspath(os.path.join(os.getcwd(),path))
-        print old_path,new_path
-        os.renames(old_path,new_path)
-        file_object = File.get_from_unique_name(Host.get_current_host(),new_path)
+        try:
+            os.renames(old_path,new_path)
+        except OSError:
+            os.remove(new_path)
+            os.renames(old_path,new_path)
+        file_object = File.get_from_current_host(new_path)
     return new_files
 
 def unique_filename_in(path=None):
