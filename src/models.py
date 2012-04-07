@@ -198,8 +198,6 @@ class Execution(models.Model):
         # See if the command has any existing files in its arguments
         using_files = filesystem.find_files_in_args(self)
 
-        print 'using files:',using_files
-
         fs_state = filesystem.get_state()
         
         stdout = subprocess.PIPE
@@ -232,12 +230,6 @@ class Execution(models.Model):
         output_files = changed_files
 
         input_files = using_files.difference(changed_files)
-
-        print 'output files:\n\n',changed_files
-
-        print 'input files:\n\n',input_files
-
-        
 
         self.save()
 
