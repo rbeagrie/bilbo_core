@@ -61,6 +61,7 @@ def move_new_files(directory):
             os.remove(new_path)
             os.renames(old_path,new_path)
         file_object = File.get_from_current_host(new_path)
+        new_files.add(file_object)
     return new_files
 
 def unique_filename_in(path=None):

@@ -3,6 +3,7 @@ from bilbo_core.exceptions import ExecutableError
 import os, sys,time,subprocess,shlex,platform
 from django.utils import timezone
 from bilbo_core import settings
+debug = settings.getboolean('bilbo','debug')
 
 class Host(models.Model):
     '''
@@ -129,7 +130,7 @@ class File(models.Model):
     executable = models.ForeignKey('Executable')
 
     def __unicode__(self):
-        return 'File %s on %s' % (self.path,self.host.name)
+        return 'File %s on %s id: %i' % (self.path,self.host.name,self.id)
 
     @staticmethod
     def get_from_current_host(path):
@@ -223,6 +224,7 @@ class Execution(models.Model):
         # See if the command has any existing files in its arguments
         # Prepare a new command with absolute paths to existing files
         existing_files,new_command = self.find_files_in_args()
+        print 'existing',existing_files
 
         # Get a set of files and modification times for the current working directory
         cwd_state = filesystem.get_state(os.getcwd())
@@ -261,8 +263,12 @@ class Execution(models.Model):
         self.output = sp.stdout.read()
         self.error = sp.stderr.read()
 
+        # Pause in debug mode
+        if debug: p = raw_input('Pausing...')
+
         # Check for new files in the working directory and move them to the current directory
         new_files = filesystem.move_new_files(working_directory)
+        print 'new',new_files
 
         # Remove the working directory
         #os.rmdir(working_directory)
@@ -270,11 +276,16 @@ class Execution(models.Model):
         # See if any files in our current directory have changed
         # (these must be output files)
         changed_files = filesystem.get_changed_files(os.getcwd(),cwd_state)
-        output_files = changed_files.union(new_files)
+        print 'changed',changed_files
+        old_output_files = existing_files.intersection(changed_files)
+        print 'output_old',old_output_files
+        output_files = old_output_files.union(new_files)
+        print 'output_all',output_files
 
         # Any files listed in the command arguments but not changed
         # by the process must be input files
         input_files = existing_files.difference(changed_files)
+        print 'input',input_files
 
         # Save the execution
         self.save()

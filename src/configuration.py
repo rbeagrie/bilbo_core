@@ -52,7 +52,8 @@ class Configuration(SafeConfigParser):
         self.readfp(file_pointer)
 
         # Set up the django configuration
-        self.configure_django()
+        if not settings.configured:
+            self.configure_django()
 
     def configure_django(self):
         '''Set some django variables based on the config file'''
