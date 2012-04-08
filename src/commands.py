@@ -4,6 +4,7 @@ import bilbo_core
 import sys
 from django.utils import timezone
 from bilbo_core.models import Executable,Host,Execution
+from bilbo_core.versioncontrol import UncommittedModificationsError
 
 def run(argv):
     '''Run the command passed to bilbo and record the command, plus its inputs/outputs'''
@@ -20,8 +21,16 @@ def run(argv):
     # Get the appropriate executable object
     executable = Executable.get_from_command(executable_command)
 
+    # Get the appropriate version object
+    version = executable.get_version()
+
+    # Check for uncommitted changes
+    if not executable.check_version_control():
+        print '%s is under version control and the repo has uncommitted changes. Please commit the changes and try again.' % executable.path
+        sys.exit(1)
+
     # Create an execution object
-    execution = Execution.get_execution(executable,host,argv)
+    execution = Execution.get_execution(executable,host,version,argv)
 
     # Run the execution
     execution.run()

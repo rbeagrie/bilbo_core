@@ -60,6 +60,9 @@ class Executable(models.Model):
                                           choices=VERSION_CONTROL_CHOICES)
     version_command = models.CharField(max_length=50)
 
+    def __unicode__(self):
+        return '%s on %s' % (self.name,self.host)
+
     def get_version_control(self):
         # Check if the executable is under version control
         try:
@@ -69,9 +72,69 @@ class Executable(models.Model):
 
         # This is a hack
         if working_copy:
-            return 'git'
+            self.version_control = 'git'
         else:
-            return 'none'
+            self.version_control = 'none'
+
+    def get_version_command(self):
+
+        if str(self.version_command) != '':
+            return self.version_command
+
+        if str(self.version_control) == '':
+            self.get_version_control()
+        
+        if str(self.version_control) != 'none':
+            self.version_command = self.version_control
+        else:
+            code,output = self.try_version('--version')
+            if code:
+                self.version_command = '--version'
+            else:
+                self.version_command = 'unknown'
+            
+        self.save()
+
+    def try_version(self,command):
+        
+        full_command = [self.path,self.version_command]
+        stdout = subprocess.PIPE
+        stderr = subprocess.STDOUT
+        sp = subprocess.Popen(full_command,
+                              stdout=stdout,
+                              stderr=stderr)
+        code = sp.wait()
+
+        output = sp.stdout.read()
+
+        return code,output
+
+    def get_version(self):
+        if str(self.version_command) == '':
+            self.get_version_command()
+        
+        if self.version_command in ['none','unknown']:
+            return Version.unknown(self)
+        elif self.version_command in ['git']:
+            output = versioncontrol.get_working_copy(os.path.dirname(self.path)).current_version()
+        else:
+            code,output = self.try_version(self.version_command)
+            
+        return Version.get_from_string(self,str(output))
+
+    def check_version_control(self):
+        if str(self.version_command) == '':
+            self.get_version_command()
+            
+        if self.version_command in ['git']:
+            #This is a little hacky
+            working_copy = versioncontrol.get_working_copy(os.path.dirname(self.path))
+            is_clean = not working_copy.repository._repository.is_dirty(untracked_files=True)
+            try:
+                del(working_copy)
+            return is_clean
+        else:
+            return True
 
     @staticmethod
     def get_from_command(command,host=False):
@@ -121,23 +184,45 @@ class Executable(models.Model):
 
         return executable
 
-    def save(self,*args,**kwargs):
-
-        # This is a hack
-        if self.version_control == '':
-            self.version_control = self.get_version_control()
-
-        super(Executable, self).save(*args, **kwargs)
-
     @staticmethod
     def unknown():
         ''' Get or create an unknown executable object '''
         
         executable, created = Executable.objects.get_or_create(name='unknown_executable',
                                                                host=Host.get_current_host(),
-                  defaults={'registered':timezone.now()})
+                  defaults={'registered':timezone.now(),
+                            'version_control':'none',
+                            'version_command':'none'})
 
         return executable
+
+class Version(models.Model):
+    ''' A class for holding version information '''
+
+    name = models.CharField(max_length=50)
+    version = models.CharField(max_length=255)
+    executable = models.ForeignKey('Executable')
+
+    def __unicode__(self):
+        return "%s version %s" % (self.executable.name,self.version)
+
+    @staticmethod
+    def unknown(executable):
+        ''' Get or create an unknown version object '''
+        
+        version, created = Version.objects.get_or_create(name='unknown_version',
+                                                         executable=executable,
+                                                         version='unknown_version')
+
+        return version
+
+    @staticmethod
+    def get_from_string(executable,string):
+
+        version, created = Version.objects.get_or_create(executable=executable,
+                                                         version=string,
+                                                         defaults={'name':string[-20:]})
+        return version
 
 class File(models.Model):
     '''A class for holding the information about files which have been used in or created by executions'''
@@ -200,6 +285,7 @@ class Execution(models.Model):
     runtime = models.FloatField()
     host = models.ForeignKey(Host)
     executable = models.ForeignKey(Executable)
+    version = models.ForeignKey(Version)
     full_command = models.CharField(max_length=255)
     output = models.TextField()
     error = models.TextField()
@@ -332,11 +418,12 @@ class Execution(models.Model):
         used_file.save()
 
     @staticmethod
-    def get_execution(executable,host,argv):
+    def get_execution(executable,host,version,argv):
         return Execution(name = time.strftime('%Y%m%d-%H%M%S:')+executable.name,
                          submission_date = timezone.now(),
                          host = host,
                          executable = executable,
+                         version = version,
                          full_command = ' '.join(argv))
 
 from bilbo_core import filesystem
