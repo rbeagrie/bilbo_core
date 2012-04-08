@@ -129,10 +129,7 @@ class Executable(models.Model):
         if self.version_command in ['git']:
             #This is a little hacky
             working_copy = versioncontrol.get_working_copy(os.path.dirname(self.path))
-            is_clean = not working_copy.repository._repository.is_dirty(untracked_files=True)
-            try:
-                del(working_copy)
-            return is_clean
+            return not working_copy.repository._repository.is_dirty(untracked_files=True)
         else:
             return True
 
@@ -336,8 +333,18 @@ class Execution(models.Model):
         cwd_state = filesystem.get_state(os.getcwd())
 
         # Generate a new, unique working directory for the sub-process
-        working_directory = filesystem.unique_filename_in(os.getcwd())
-        os.mkdir(os.path.join(os.getcwd(), working_directory))
+        base_directory = settings.get('bilbo','temp_dir')
+        if base_directory == '':
+            base_directory = os.getcwd()
+        else:
+            base_directory = os.path.abspath(base_directory)
+        if not os.path.exists(base_directory):
+            print 'The temporary directory specified does not exist'
+            sys.exit(1)
+        temp_path = filesystem.unique_filename_in(base_directory)
+        working_directory = os.path.join(base_directory, temp_path)
+        
+        os.mkdir(working_directory)
 
         # Prepare to get the output of our command
         stdout = subprocess.PIPE
@@ -376,7 +383,8 @@ class Execution(models.Model):
         new_files = filesystem.move_new_files(working_directory)
 
         # Remove the working directory
-        #os.rmdir(working_directory)
+        if os.path.isdir(working_directory):
+            os.rmdir(working_directory)
 
         # See if any files in our current directory have changed
         # (these must be output files)

@@ -1,7 +1,7 @@
 from textwrap import dedent
 from django.core import management
 import bilbo_core
-import sys
+import sys,logging
 from django.utils import timezone
 from bilbo_core.models import Executable,Host,Execution
 from bilbo_core.versioncontrol import UncommittedModificationsError
@@ -35,7 +35,7 @@ def run(argv):
     # Run the execution
     execution.run()
 
-    print execution
+    logging.debug(str(execution))
 
     if execution.return_code != 0:
         raise Exception('Program failed!')

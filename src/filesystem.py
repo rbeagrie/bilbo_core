@@ -59,7 +59,7 @@ def move_new_files(directory):
             os.renames(old_path,new_path)
         except OSError:
             os.remove(new_path)
-            os.renames(old_path,new_path)
+            os.rename(old_path,new_path)
         file_object = File.get_from_current_host(new_path)
         new_files.add(file_object)
     return new_files
@@ -73,6 +73,7 @@ def unique_filename_in(path=None):
     """
     if path == None:
         path = os.getcwd()
+    path = os.path.abspath(path)
         
     def random_string():
         return "".join([random.choice(string.letters + string.digits)
