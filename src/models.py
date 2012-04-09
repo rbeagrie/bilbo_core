@@ -1,9 +1,10 @@
 from django.db import models
 from bilbo_core.exceptions import ExecutableError
-import os, sys,time,subprocess,shlex,platform
+import os, sys,time,subprocess,shlex,platform,logging
 from django.utils import timezone
 from bilbo_core import settings,versioncontrol
 debug = settings.getboolean('bilbo','debug')
+logger = logging.getLogger(__name__)
 
 class Host(models.Model):
     '''
@@ -59,6 +60,8 @@ class Executable(models.Model):
     version_control = models.CharField(max_length=50,
                                           choices=VERSION_CONTROL_CHOICES)
     version_command = models.CharField(max_length=50)
+    # This is a hack
+    interpreter = models.CharField(max_length=255)
 
     def __unicode__(self):
         return '%s on %s' % (self.name,self.host)
@@ -75,29 +78,15 @@ class Executable(models.Model):
             self.version_control = 'git'
         else:
             self.version_control = 'none'
-
-    def get_version_command(self):
-
-        if str(self.version_command) != '':
-            return self.version_command
-
-        if str(self.version_control) == '':
-            self.get_version_control()
-        
-        if str(self.version_control) != 'none':
-            self.version_command = self.version_control
-        else:
-            code,output = self.try_version('--version')
-            if code:
-                self.version_command = '--version'
-            else:
-                self.version_command = 'unknown'
             
-        self.save()
 
     def try_version(self,command):
-        
-        full_command = [self.path,self.version_command]
+        if str(self.interpreter) == '':
+            full_command = []
+        else:
+            full_command = [str(self.interpreter)]
+        full_command.extend([self.path,self.version_command])
+        logger.debug('Trying version command: %s' % ' '.join(full_command))
         stdout = subprocess.PIPE
         stderr = subprocess.STDOUT
         sp = subprocess.Popen(full_command,
@@ -110,23 +99,24 @@ class Executable(models.Model):
         return code,output
 
     def get_version(self):
-        if str(self.version_command) == '':
-            self.get_version_command()
-        
-        if self.version_command in ['none','unknown']:
+        logger.debug('Executable "%s" version command is "%s"' %(self.name,self.version_command))
+        if str(self.version_command) in ['none','unknown','']:
+            logger.debug('Executable "%s" version command is unset, skipping version check' %(self.name))
             return Version.unknown(self)
         elif self.version_command in ['git']:
+            logger.debug('Executable "%s" is under version control, checking repo version' %(self.name))
             output = versioncontrol.get_working_copy(os.path.dirname(self.path)).current_version()
         else:
+            logger.debug('Executable "%s" has a version command set, checking version' %(self.name))
             code,output = self.try_version(self.version_command)
-            
+        logger.debug('Getting a version object from output: %s' % output)    
         return Version.get_from_string(self,str(output))
 
     def check_version_control(self):
-        if str(self.version_command) == '':
-            self.get_version_command()
+        if str(self.version_control) == '':
+            self.get_version_control()
             
-        if self.version_command in ['git']:
+        if self.version_control in ['git']:
             #This is a little hacky
             working_copy = versioncontrol.get_working_copy(os.path.dirname(self.path))
             return not working_copy.repository._repository.is_dirty(untracked_files=True)
@@ -325,9 +315,14 @@ class Execution(models.Model):
     
     def run(self):
 
+        logger.debug('Original command is %s' % self.full_command)
+        logger.debug('Making existing file paths absolute')
+
         # See if the command has any existing files in its arguments
         # Prepare a new command with absolute paths to existing files
         existing_files,new_command = self.find_files_in_args()
+
+        logger.debug('New command is %s' % new_command)
 
         # Get a set of files and modification times for the current working directory
         cwd_state = filesystem.get_state(os.getcwd())
@@ -356,7 +351,7 @@ class Execution(models.Model):
         # Run our command
         print 'Running %s with arguments %s' % (self.executable.name,
                                                 ' '.join(new_command[1:]))
-        
+        logger.debug('Full command to run is %s' % new_command)
         try:
             sp = subprocess.Popen(new_command,
                                   bufsize=-1,
@@ -365,15 +360,21 @@ class Execution(models.Model):
                                   cwd = working_directory)
         except ValueError, ose:
             raise ValueError("Program %s does not seem to exist in your $PATH." % new_command[0])
-
-        # Get the return code
-        self.return_code = sp.wait()
+        self.output=''
+        while True:
+            out = sp.stdout.readline()
+            if out:
+                print out
+                sys.stdout.flush()
+                self.output += out
+            else:
+                self.return_code = sp.wait()
+                break
 
         # Calculate elapsed cpu time
         self.runtime = time.clock() - start_time
 
         # Read the process' stdout and stderr
-        self.output = sp.stdout.read()
         self.error = sp.stderr.read()
 
         # Pause in debug mode

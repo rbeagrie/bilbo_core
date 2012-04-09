@@ -5,6 +5,7 @@ import sys,logging
 from django.utils import timezone
 from bilbo_core.models import Executable,Host,Execution
 from bilbo_core.versioncontrol import UncommittedModificationsError
+logger = logging.getLogger(__name__)
 
 def run(argv):
     '''Run the command passed to bilbo and record the command, plus its inputs/outputs'''
@@ -12,30 +13,42 @@ def run(argv):
     # Split argv into an executable and some remaining arguments
     # This is an ugly, ugly hack
     executable_command = argv[0]
+    interpreter = False
     if executable_command in [ 'python','python.exe' ]:
-        executable_command = argv[1]
+        # Get the first thing that doesnt look like an argument
+        for arg in argv[1:]:
+            if arg[0] != '-':
+                executable_command = arg
+                break
 
     # Get the appropriate host object
     host = Host.get_current_host()
 
     # Get the appropriate executable object
-    executable = Executable.get_from_command(executable_command)
+    logger.debug('Getting object for command %s' % executable_command)
+    executable = Executable.get_from_command(executable_command,interpreter)
 
     # Get the appropriate version object
+    logger.debug('Getting version object for executable %s' % executable)
     version = executable.get_version()
 
+    logger.debug('Executable %s version is %s' % (executable,version))
+
     # Check for uncommitted changes
+    logger.debug('Checking if executable %s is under version control' % executable)
     if not executable.check_version_control():
+        logger.debug('Executable %s is under version control. Checking for uncommitted changes' % executable)
         print '%s is under version control and the repo has uncommitted changes. Please commit the changes and try again.' % executable.path
         sys.exit(1)
 
     # Create an execution object
+    logger.debug('Getting execution object for executable %s version %s with arguments %s' % (executable,version.name,' '.join(argv)))
     execution = Execution.get_execution(executable,host,version,argv)
 
     # Run the execution
     execution.run()
 
-    logging.debug(str(execution))
+    logger.debug(str(execution))
 
     if execution.return_code != 0:
         raise Exception('Program failed!')

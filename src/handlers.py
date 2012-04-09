@@ -1,5 +1,6 @@
 import logging
 import logging.handlers
+logger = logging.getLogger(__name__)
 
 class CachedHandler(logging.StreamHandler):
     def __init__(self):
@@ -8,7 +9,7 @@ class CachedHandler(logging.StreamHandler):
         self.cache = True
 
     def flush_records(self):
-        logging.debug('Flushing cached logging records')
+        logger.debug('Flushing cached logging records')
         self.cache = False
         root = logging.getLogger()
         for rec in self.records:
