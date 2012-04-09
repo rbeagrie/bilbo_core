@@ -1,10 +1,10 @@
 from textwrap import dedent
 from django.core import management
-import bilbo_core
+import configuration
 import sys,logging
 from django.utils import timezone
-from bilbo_core.models import Executable,Host,Execution
-from bilbo_core.versioncontrol import UncommittedModificationsError
+from models import Executable,Host,Execution
+from versioncontrol import UncommittedModificationsError
 logger = logging.getLogger(__name__)
 
 def run(argv):

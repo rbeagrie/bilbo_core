@@ -14,27 +14,16 @@ handler.setFormatter(formatter)
 logging.getLogger().addHandler(handler)
 logging.getLogger().setLevel(logging.DEBUG)
 
-from configuration import Configuration,DefaultConfiguration
+# We dont want to do any setup here in the toplevel package in case we are unit testing
 
-try:
-    settings = Configuration()
-except NoConfigFoundError:
-    settings = DefaultConfiguration()
+class SettingsPlaceholder(object):
+    def __getattr__(self,name):
+        '''
+        Raise a not implemented exception if anything tries to interact with the
+        settings object before it has been loaded.
+        '''
+        raise NotImplementedError("The settings have not been loaded yet.")
 
-def db_table_exists(table, cursor=None):
-    try:
-        if not cursor:
-            from django.db import connection
-            cursor = connection.cursor()
-        if not cursor:
-            raise Exception
-        table_names = connection.introspection.get_table_list(cursor)
-    except:
-        raise Exception("unable to determine if the table '%s' exists" % table)
-    else:
-        return table in table_names
+settings = SettingsPlaceholder()
 
-if not db_table_exists('bilbo_core_file'):
-    print "Bilbo's database appears to be uninitialised. We will need to create some tables before we can run anything"
-    from django.core.management.commands import syncdb
-    syncdb.Command().run_from_argv(['bilbo','syncdb'])
+# settings is replaced with some real settings if bilbo_core.commands is imported

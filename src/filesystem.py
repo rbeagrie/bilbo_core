@@ -85,4 +85,4 @@ def unique_filename_in(path=None):
             break
     return filename
 
-from bilbo_core.models import File,Host
+from .models import File,Host

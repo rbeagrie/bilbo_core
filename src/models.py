@@ -1,8 +1,8 @@
 from django.db import models
-from bilbo_core.exceptions import ExecutableError
+from .exceptions import ExecutableError
 import os, sys,time,subprocess,shlex,platform,logging
 from django.utils import timezone
-from bilbo_core import settings,versioncontrol
+from . import settings,versioncontrol
 debug = settings.getboolean('bilbo','debug')
 logger = logging.getLogger(__name__)
 

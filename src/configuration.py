@@ -1,5 +1,6 @@
 from ConfigParser import SafeConfigParser
 from django.conf import settings
+import bilbo_core
 import logging,os
 from exceptions import NoConfigFoundError
 
@@ -148,3 +149,28 @@ class DefaultConfiguration(Configuration):
             os.mkdir(self.default_directory)
         with open(self.default_file, 'wb') as configfile:
             self.write(configfile)
+
+# When the configuration module is loaded, perform all the configuration
+
+try:
+    bilbo_core.settings = Configuration()
+except NoConfigFoundError:
+    bilbo_core.settings = DefaultConfiguration()
+
+def db_table_exists(table, cursor=None):
+    try:
+        if not cursor:
+            from django.db import connection
+            cursor = connection.cursor()
+        if not cursor:
+            raise Exception
+        table_names = connection.introspection.get_table_list(cursor)
+    except:
+        raise Exception("unable to determine if the table '%s' exists" % table)
+    else:
+        return table in table_names
+
+if not db_table_exists('bilbo_core_file'):
+    print "Bilbo's database appears to be uninitialised. We will need to create some tables before we can run anything"
+    from django.core.management.commands import syncdb
+    syncdb.Command().run_from_argv(['bilbo','syncdb'])
